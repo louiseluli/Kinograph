@@ -1,0 +1,29 @@
+# docker-compose.yml
+
+version: "3.8" # Specifies the file format version
+
+services:
+  # This defines our PostgreSQL database service
+  db:
+    image: postgres:15-alpine # Use the official PostgreSQL v15 image (alpine is a lightweight version)
+    container_name: kinograph_db
+    restart: always # Automatically restarts the database if it crashes or the system reboots
+
+    # These are the credentials for our database.
+    # We use environment variables for security.
+    environment:
+      - POSTGRES_USER=kinograph_user
+      - POSTGRES_PASSWORD=kinograph_password
+      - POSTGRES_DB=kinograph_db
+
+    # This maps the port inside the container (5432) to a port on your local machine (5432).
+    # This is how our Python script will connect to the database.
+    ports:
+      - "5432:5432"
+
+    # This is crucial for data persistence.
+    # It links a folder on your computer ('./postgres-data') to the folder inside the container
+    # where PostgreSQL stores its data. Without this, you would lose all your data
+    # if you were to remove and recreate the container.
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
