@@ -1,17 +1,26 @@
 # backend/crud.py
 
 from sqlalchemy.orm import Session
-# --- CHANGE 1: Import 'operators' from sqlalchemy.sql ---
 from sqlalchemy import or_
 from sqlalchemy.sql import operators
 from typing import Optional
 from . import models
 
+# --- ADD THIS NEW FUNCTION ---
+def search_people_by_name(db: Session, name: str, limit: int = 25):
+    """Searches for people by their primary name."""
+    search_pattern = f"%{name}%"
+    return db.query(models.NameBasics).filter(models.NameBasics.primaryName.ilike(search_pattern)).limit(limit).all()
+
+
 def comprehensive_movie_search(
     db: Session,
     title: Optional[str] = None,
-    actor: Optional[str] = None,
-    director: Optional[str] = None,
+    actor_name: Optional[str] = None,
+    director_name: Optional[str] = None,
+    # --- ADD NEW PARAMETERS ---
+    actor_id: Optional[str] = None,
+    director_id: Optional[str] = None,
     genre: Optional[str] = None,
     start_year: Optional[int] = None,
     end_year: Optional[int] = None,
@@ -21,13 +30,10 @@ def comprehensive_movie_search(
     """
     Performs a comprehensive search for movies based on multiple optional criteria.
     """
-    # Start with a base query for movies
     query = db.query(models.TitleBasics)
 
-    # Filter by Title (including AKAs)
     if title:
         search_pattern = f"%{title}%"
-        # JOIN with title_akas and search in primaryTitle, originalTitle, and the aka's title
         query = query.join(models.TitleAkas, isouter=True).filter(
             or_(
                 models.TitleBasics.primaryTitle.ilike(search_pattern),
@@ -36,29 +42,30 @@ def comprehensive_movie_search(
             )
         )
 
-    # Filter by Actor or Director name
-    if actor or director:
-        # We need to join through principals to get to the names
+    # --- THIS LOGIC IS NOW UPDATED ---
+    # Prioritize searching by specific ID if provided
+    if actor_id or director_id:
+        query = query.join(models.TitlePrincipals)
+        if actor_id:
+            query = query.filter(models.TitlePrincipals.nconst == actor_id)
+        if director_id:
+            query = query.filter(models.TitlePrincipals.nconst == director_id)
+    # Fallback to searching by name if no ID is given
+    elif actor_name or director_name:
         query = query.join(models.TitlePrincipals).join(models.NameBasics)
-        if actor:
-            actor_pattern = f"%{actor}%"
-            query = query.filter(models.NameBasics.primaryName.ilike(actor_pattern))
+        if actor_name:
+            query = query.filter(models.NameBasics.primaryName.ilike(f"%{actor_name}%"))
             query = query.filter(models.TitlePrincipals.category.in_(['actor', 'actress', 'self']))
-        if director:
-            director_pattern = f"%{director}%"
-            query = query.filter(models.NameBasics.primaryName.ilike(director_pattern))
+        if director_name:
+            query = query.filter(models.NameBasics.primaryName.ilike(f"%{director_name}%"))
             query = query.filter(models.TitlePrincipals.category == 'director')
             
-    # Filter by Genre
     if genre:
-        # --- CHANGE 2: Use the correctly imported 'ilike_op' operator ---
         query = query.filter(models.TitleBasics.genres.any(genre, operator=operators.ilike_op))
 
-    # Filter by Year range
     if start_year:
         query = query.filter(models.TitleBasics.startYear >= start_year)
     if end_year:
         query = query.filter(models.TitleBasics.startYear <= end_year)
 
-    # Ensure we get distinct movies, apply pagination, and execute
     return query.distinct().offset(skip).limit(limit).all()
